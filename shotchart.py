@@ -3,11 +3,13 @@ from nba_api.stats.endpoints import shotchartdetail
 import matplotlib.pyplot as plt
 import numpy as np
 
-def get_player_id(name):
+def get_player_data(name):
     player_list = players.find_players_by_full_name(name)
     if not player_list:
-        return None
-    return player_list[0]['id']
+        return None, None
+    player = player_list[0]
+    full_name = f"{player['first_name']} {player['last_name']}"
+    return player['id'], full_name
 
 def fetch_shot_data(player_id):
     response = shotchartdetail.ShotChartDetail(
@@ -20,23 +22,20 @@ def fetch_shot_data(player_id):
 
 def draw_three_point_line(ax):
     radius = 237.5
-    arc_angles = np.linspace(-np.pi, np.pi, 500)  # Full circle, higher resolution
+    arc_angles = np.linspace(-np.pi, np.pi, 500)
 
     x_arc = radius * np.cos(arc_angles)
     y_arc = radius * np.sin(arc_angles)
 
-    # Keep only arc segment between x = -220 and 220 AND y >= 0 (top half only)
     mask = (x_arc >= -220) & (x_arc <= 220) & (y_arc >= 0)
     ax.plot(x_arc[mask], y_arc[mask], color='black', linewidth=2)
 
-    # Draw corner 3-point lines from baseline (-47.5") to where arc begins (~89")
     ax.plot([-220, -220], [-47.5, 89], color='black', linewidth=2)
     ax.plot([220, 220], [-47.5, 89], color='black', linewidth=2)
 
 def draw_paint(ax):
-    # Paint rectangle
     paint_width = 160
-    paint_height = 140  # ✅ Reduce height so it doesn't extend above arc
+    paint_height = 140  # Adjusted so it stays below arc
 
     ax.plot([-paint_width/2, -paint_width/2], [-47.5, paint_height], color='black', linewidth=2)
     ax.plot([paint_width/2, paint_width/2], [-47.5, paint_height], color='black', linewidth=2)
@@ -62,27 +61,23 @@ def draw_paint(ax):
     rim = plt.Circle((0, 0), 7.5, linewidth=1.5, color='orange', fill=False)
     ax.add_patch(rim)
 
-
-
 def plot_shot_chart(df, player_name):
     fig, ax = plt.subplots(figsize=(6.5, 5.5))
 
-    # Plot shots
     ax.scatter(df['LOC_X'], df['LOC_Y'],
                c=df['SHOT_MADE_FLAG'],
                cmap='coolwarm', alpha=0.7)
 
     draw_three_point_line(ax)
-    draw_paint(ax)  # ✅ must be BEFORE plt.show()
+    draw_paint(ax)
 
     ax.set_xlim(-250, 250)
     ax.set_ylim(-50, 470)
     ax.set_aspect('equal')
     ax.axis('off')
-    ax.set_title(f"{player_name.title()}'s Shot Chart (2023-24)")
+    ax.set_title(f"{player_name}'s Shot Chart (2023-24)")
 
-    plt.show()  # ✅ final rendering AFTER all drawing
-
+    plt.show()
 
 def main():
     print("🏀 NBA Shot Chart Viewer")
@@ -94,7 +89,7 @@ def main():
             print("Goodbye!")
             break
 
-        player_id = get_player_id(name)
+        player_id, full_name = get_player_data(name)
         if not player_id:
             print("❌ Player not found. Try again.\n")
             continue
@@ -106,8 +101,8 @@ def main():
             print("No shot data found for this player.\n")
             continue
 
-        print(f"Displaying {name.title()}'s shot chart...")
-        plot_shot_chart(df, name)
+        print(f"Displaying {full_name}'s shot chart...")
+        plot_shot_chart(df, full_name)
         print()
 
 if __name__ == "__main__":

@@ -33,16 +33,47 @@ def draw_three_point_line(ax):
     ax.plot([-220, -220], [-47.5, 89], color='black', linewidth=2)
     ax.plot([220, 220], [-47.5, 89], color='black', linewidth=2)
 
+def draw_paint(ax):
+    # Paint rectangle
+    paint_width = 160
+    paint_height = 140  # ✅ Reduce height so it doesn't extend above arc
+
+    ax.plot([-paint_width/2, -paint_width/2], [-47.5, paint_height], color='black', linewidth=2)
+    ax.plot([paint_width/2, paint_width/2], [-47.5, paint_height], color='black', linewidth=2)
+    ax.plot([-paint_width/2, paint_width/2], [paint_height, paint_height], color='black', linewidth=2)
+
+    # Free throw circle (top half)
+    circle_radius = 72
+    theta = np.linspace(0, np.pi, 100)
+    x = circle_radius * np.cos(theta)
+    y = circle_radius * np.sin(theta) + paint_height
+    ax.plot(x, y, color='black', linewidth=2)
+
+    # Free throw circle (bottom half, dashed)
+    theta = np.linspace(-np.pi, 0, 100)
+    x = circle_radius * np.cos(theta)
+    y = circle_radius * np.sin(theta) + paint_height
+    ax.plot(x, y, color='black', linestyle='dashed', linewidth=1)
+
+    # Backboard
+    ax.plot([-30, 30], [-7.5, -7.5], color='black', linewidth=2)
+
+    # Rim
+    rim = plt.Circle((0, 0), 7.5, linewidth=1.5, color='orange', fill=False)
+    ax.add_patch(rim)
+
+
 
 def plot_shot_chart(df, player_name):
     fig, ax = plt.subplots(figsize=(6.5, 5.5))
 
-    # Plot shots: 1 = made (blue), 0 = missed (red)
-    scatter = ax.scatter(df['LOC_X'], df['LOC_Y'],
-                         c=df['SHOT_MADE_FLAG'],
-                         cmap='coolwarm', alpha=0.7)
+    # Plot shots
+    ax.scatter(df['LOC_X'], df['LOC_Y'],
+               c=df['SHOT_MADE_FLAG'],
+               cmap='coolwarm', alpha=0.7)
 
     draw_three_point_line(ax)
+    draw_paint(ax)  # ✅ must be BEFORE plt.show()
 
     ax.set_xlim(-250, 250)
     ax.set_ylim(-50, 470)
@@ -50,7 +81,8 @@ def plot_shot_chart(df, player_name):
     ax.axis('off')
     ax.set_title(f"{player_name.title()}'s Shot Chart (2023-24)")
 
-    plt.show()
+    plt.show()  # ✅ final rendering AFTER all drawing
+
 
 def main():
     print("🏀 NBA Shot Chart Viewer")

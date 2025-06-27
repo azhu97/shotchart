@@ -18,34 +18,43 @@ def fetch_shot_data(player_id):
     )
     return response.get_data_frames()[0]
 
+def draw_three_point_line(ax):
+    radius = 237.5
+    arc_angles = np.linspace(-np.pi, np.pi, 500)  # Full circle, higher resolution
+
+    x_arc = radius * np.cos(arc_angles)
+    y_arc = radius * np.sin(arc_angles)
+
+    # Keep only arc segment between x = -220 and 220 AND y >= 0 (top half only)
+    mask = (x_arc >= -220) & (x_arc <= 220) & (y_arc >= 0)
+    ax.plot(x_arc[mask], y_arc[mask], color='black', linewidth=2)
+
+    # Draw corner 3-point lines from baseline (-47.5") to where arc begins (~89")
+    ax.plot([-220, -220], [-47.5, 89], color='black', linewidth=2)
+    ax.plot([220, 220], [-47.5, 89], color='black', linewidth=2)
+
+
 def plot_shot_chart(df, player_name):
-    plt.figure(figsize=(6.5, 5.5))
+    fig, ax = plt.subplots(figsize=(6.5, 5.5))
 
-    # Plot made/missed shots
-    plt.scatter(df['LOC_X'], df['LOC_Y'], c=df['SHOT_MADE_FLAG'], cmap='coolwarm', alpha=0.7)
+    # Plot shots: 1 = made (blue), 0 = missed (red)
+    scatter = ax.scatter(df['LOC_X'], df['LOC_Y'],
+                         c=df['SHOT_MADE_FLAG'],
+                         cmap='coolwarm', alpha=0.7)
 
-    # Draw 3-point arc
-    arc = np.linspace(-np.pi / 2, np.pi / 2, 300)
-    radius = 237.5  # 23.75 feet * 12 inches
-    x_arc = radius * np.cos(arc)
-    y_arc = radius * np.sin(arc)
+    draw_three_point_line(ax)
 
-    plt.plot(x_arc, y_arc, color='black')
+    ax.set_xlim(-250, 250)
+    ax.set_ylim(-50, 470)
+    ax.set_aspect('equal')
+    ax.axis('off')
+    ax.set_title(f"{player_name.title()}'s Shot Chart (2023-24)")
 
-    # Draw corner 3 lines
-    plt.plot([-220, -220], [-47.5, 92], color='black')  # left corner
-    plt.plot([220, 220], [-47.5, 92], color='black')   # right corner
-
-    plt.title(f"{player_name}'s Shot Chart (2023-24)")
-    plt.xlim(-250, 250)
-    plt.ylim(-50, 470)
-    plt.gca().set_aspect('equal', adjustable='box')
-    plt.axis(False)
     plt.show()
 
 def main():
     print("🏀 NBA Shot Chart Viewer")
-    print("'exit' to quit.\n")
+    print("Type 'exit' to quit.\n")
 
     while True:
         name = input("Enter NBA player's full name: ")
@@ -65,9 +74,9 @@ def main():
             print("No shot data found for this player.\n")
             continue
 
-        print(f"Displaying {name}'s shot chart...")
+        print(f"Displaying {name.title()}'s shot chart...")
         plot_shot_chart(df, name)
-        print()  # Add blank line before next prompt
+        print()
 
 if __name__ == "__main__":
     main()

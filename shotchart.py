@@ -11,12 +11,12 @@ def get_player_data(name):
     full_name = f"{player['first_name']} {player['last_name']}"
     return player['id'], full_name
 
-def fetch_shot_data(player_id):
+def fetch_shot_data(player_id, season):
     response = shotchartdetail.ShotChartDetail(
         team_id=0,
         player_id=player_id,
         season_type_all_star='Regular Season',
-        season_nullable='2023-24'
+        season_nullable=season
     )
     return response.get_data_frames()[0]
 
@@ -61,7 +61,7 @@ def draw_paint(ax):
     rim = plt.Circle((0, 0), 7.5, linewidth=1.5, color='orange', fill=False)
     ax.add_patch(rim)
 
-def plot_shot_chart(df, player_name):
+def plot_shot_chart(df, player_name, season):
     fig, ax = plt.subplots(figsize=(6.5, 5.5))
 
     ax.scatter(df['LOC_X'], df['LOC_Y'],
@@ -75,7 +75,7 @@ def plot_shot_chart(df, player_name):
     ax.set_ylim(-50, 470)
     ax.set_aspect('equal')
     ax.axis('off')
-    ax.set_title(f"{player_name}'s Shot Chart (2023-24)")
+    ax.set_title(f"{player_name}'s Shot Chart ({season})")
 
     plt.show()
 
@@ -94,15 +94,19 @@ def main():
             print("❌ Player not found. Try again.\n")
             continue
 
-        print("Fetching shot data...")
-        df = fetch_shot_data(player_id)
+        season = input("Enter season (e.g. 2023-24) [press Enter for default]: ").strip()
+        if not season:
+            season = '2023-24'
+
+        print(f"Fetching shot data for {full_name} ({season})...")
+        df = fetch_shot_data(player_id, season)
 
         if df.empty:
             print("No shot data found for this player.\n")
             continue
 
         print(f"Displaying {full_name}'s shot chart...")
-        plot_shot_chart(df, full_name)
+        plot_shot_chart(df, full_name, season)
         print()
 
 if __name__ == "__main__":

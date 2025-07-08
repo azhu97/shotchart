@@ -2,23 +2,50 @@ from nba_api.stats.static import players
 from nba_api.stats.endpoints import shotchartdetail
 import matplotlib.pyplot as plt
 import numpy as np
+import re
 
 def get_player_data(name):
     player_list = players.find_players_by_full_name(name)
     if not player_list:
         return None, None
-    player = player_list[0]
+    if len(player_list) > 1:
+        print(f"Multiple players found for '{name}':")
+        for idx, p in enumerate(player_list, 1):
+            print(f"  {idx}. {p['full_name']} (ID: {p['id']})")
+        try:
+            choice = int(input("Select the player by number: "))
+            player = player_list[choice - 1]
+        except (ValueError, IndexError):
+            print("Invalid selection.")
+            return None, None
+    else:
+        player = player_list[0]
     full_name = f"{player['first_name']} {player['last_name']}"
     return player['id'], full_name
 
+def normalize_season(season):
+    # Accept '2021-2022' or '2021-22' and convert to '2021-22'
+    match = re.match(r"(\d{4})-(\d{2,4})", season)
+    if match:
+        start, end = match.groups()
+        if len(end) == 4:
+            end = end[2:]
+        return f"{start}-{end}"
+    return season
+
 def fetch_shot_data(player_id, season):
-    response = shotchartdetail.ShotChartDetail(
-        team_id=0,
-        player_id=player_id,
-        season_type_all_star='Regular Season',
-        season_nullable=season
-    )
-    return response.get_data_frames()[0]
+    try:
+        response = shotchartdetail.ShotChartDetail(
+            team_id=0,
+            player_id=player_id,
+            season_type_all_star='Regular Season',
+            season_nullable=season
+        )
+        df = response.get_data_frames()[0]
+        return df
+    except Exception as e:
+        print(f"Error fetching shot data: {e}")
+        return None
 
 def draw_three_point_line(ax):
     radius = 237.5
@@ -61,6 +88,65 @@ def draw_paint(ax):
     rim = plt.Circle((0, 0), 7.5, linewidth=1.5, color='orange', fill=False)
     ax.add_patch(rim)
 
+def get_shot_area(x, y):
+    # Standard NBA court area definitions
+    if abs(x) <= 40 and y <= 80:
+        return 'Restricted Area'
+    elif abs(x) <= 80 and 80 < y <= 190:
+        return 'In the Paint (Non-RA)'
+    elif x < -220 and y <= 140:
+        return 'Left Corner 3'
+    elif x > 220 and y <= 140:
+        return 'Right Corner 3'
+    elif abs(x) <= 220 and y > 237.5:
+        return 'Above the Break 3'
+    elif abs(x) > 220 and y > 140:
+        return 'Other 3s'
+    elif abs(x) <= 220 and 190 < y < 400:
+        return 'Mid-Range'
+    else:
+        return 'Other'
+
+def compute_area_stats(df):
+    if df is None or df.empty:
+        return {}
+    df = df.copy()
+    df['AREA'] = df.apply(lambda row: get_shot_area(row['LOC_X'], row['LOC_Y']), axis=1)
+    # Always convert SHOT_MADE_FLAG to 1 for made, 0 for missed
+    df['SHOT_MADE_FLAG'] = df['SHOT_MADE_FLAG'].apply(lambda x: 1 if x in [1, 'Made Shot', True, 'made'] else 0)
+    stats = {}
+    for area in df['AREA'].unique():
+        area_df = df[df['AREA'] == area]
+        total = len(area_df)
+        made = area_df['SHOT_MADE_FLAG'].sum()
+        pct = (made / total * 100) if total > 0 else 0
+        stats[area] = {'total': total, 'made': made, 'pct': pct}
+    return stats
+
+def print_area_stats(stats, player_name):
+    print(f"\nShot Area Stats for {player_name}:")
+    print(f"{'Area':<25}{'Made':>6}{'Total':>8}{'Pct':>8}")
+    for area, s in stats.items():
+        print(f"{area:<25}{s['made']:>6}{s['total']:>8}{s['pct']:>7.1f}%")
+
+def annotate_area_stats(ax, stats):
+    # Place stats at approximate area locations
+    area_coords = {
+        'Restricted Area': (0, 40),
+        'In the Paint (Non-RA)': (0, 130),
+        'Left Corner 3': (-230, 30),
+        'Right Corner 3': (230, 30),
+        'Above the Break 3': (0, 350),
+        'Other 3s': (230, 200),
+        'Mid-Range': (0, 250),
+        'Other': (0, 450)
+    }
+    for area, coord in area_coords.items():
+        if area in stats:
+            s = stats[area]
+            text = f"{s['total']}"
+            ax.text(coord[0], coord[1], text, ha='center', va='center', fontsize=9, bbox=dict(facecolor='white', alpha=0.6, edgecolor='none'))
+
 def plot_shot_chart(df, player_name, season):
     fig, ax = plt.subplots(figsize=(6.5, 5.5))
 
@@ -77,37 +163,101 @@ def plot_shot_chart(df, player_name, season):
     ax.axis('off')
     ax.set_title(f"{player_name}'s Shot Chart ({season})")
 
+    # Compute and annotate area stats
+    stats = compute_area_stats(df)
+    annotate_area_stats(ax, stats)
     plt.show()
+    print_area_stats(stats, player_name)
+
+def plot_comparison_shot_chart(df1, player_name1, df2, player_name2, season):
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
+
+    stats1 = compute_area_stats(df1)
+    stats2 = compute_area_stats(df2)
+
+    for ax, df, player_name, stats in zip(axes, [df1, df2], [player_name1, player_name2], [stats1, stats2]):
+        ax.scatter(df['LOC_X'], df['LOC_Y'],
+                   c=df['SHOT_MADE_FLAG'],
+                   cmap='coolwarm', alpha=0.7)
+        draw_three_point_line(ax)
+        draw_paint(ax)
+        ax.set_xlim(-250, 250)
+        ax.set_ylim(-50, 470)
+        ax.set_aspect('equal')
+        ax.axis('off')
+        ax.set_title(f"{player_name}\n({season})")
+        annotate_area_stats(ax, stats)
+
+    plt.suptitle(f"Shot Chart Comparison: {player_name1} vs {player_name2} ({season})")
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.show()
+    print_area_stats(stats1, player_name1)
+    print_area_stats(stats2, player_name2)
 
 def main():
-    print("🏀 NBA Shot Chart Viewer")
+    print("\U0001F3C0 NBA Shot Chart Viewer")
     print("Type 'exit' to quit.\n")
 
     while True:
-        name = input("Enter NBA player's full name: ")
-        if name.lower() in ('exit', 'quit', 'q'):
+        print("Select mode:")
+        print("1. Single player shot chart")
+        print("2. Compare two players")
+        mode = input("Enter 1 or 2: ").strip()
+        if mode.lower() in ('exit', 'quit', 'q'):
             print("Goodbye!")
             break
-
-        player_id, full_name = get_player_data(name)
-        if not player_id:
-            print("❌ Player not found. Try again.\n")
+        if mode not in ('1', '2'):
+            print("Invalid option. Try again.\n")
             continue
 
         season = input("Enter season (e.g. 2023-24) [press Enter for default]: ").strip()
         if not season:
             season = '2023-24'
+        season = normalize_season(season)
 
-        print(f"Fetching shot data for {full_name} ({season})...")
-        df = fetch_shot_data(player_id, season)
-
-        if df.empty:
-            print("No shot data found for this player.\n")
-            continue
-
-        print(f"Displaying {full_name}'s shot chart...")
-        plot_shot_chart(df, full_name, season)
-        print()
+        if mode == '1':
+            name = input("Enter NBA player's full name: ")
+            if name.lower() in ('exit', 'quit', 'q'):
+                print("Goodbye!")
+                break
+            player_id, full_name = get_player_data(name)
+            if not player_id:
+                print("\u274C Player not found. Try again.\n")
+                continue
+            print(f"Fetching shot data for {full_name} ({season})...")
+            df = fetch_shot_data(player_id, season)
+            if df is None or df.empty:
+                print("No shot data found for this player or an error occurred.\n")
+                continue
+            print(f"Displaying {full_name}'s shot chart...")
+            plot_shot_chart(df, full_name, season)
+            print()
+        else:
+            name1 = input("Enter first NBA player's full name: ")
+            if name1.lower() in ('exit', 'quit', 'q'):
+                print("Goodbye!")
+                break
+            player_id1, full_name1 = get_player_data(name1)
+            if not player_id1:
+                print("\u274C First player not found. Try again.\n")
+                continue
+            name2 = input("Enter second NBA player's full name: ")
+            if name2.lower() in ('exit', 'quit', 'q'):
+                print("Goodbye!")
+                break
+            player_id2, full_name2 = get_player_data(name2)
+            if not player_id2:
+                print("\u274C Second player not found. Try again.\n")
+                continue
+            print(f"Fetching shot data for {full_name1} and {full_name2} ({season})...")
+            df1 = fetch_shot_data(player_id1, season)
+            df2 = fetch_shot_data(player_id2, season)
+            if df1 is None or df1.empty or df2 is None or df2.empty:
+                print("No shot data found for one or both players or an error occurred.\n")
+                continue
+            print(f"Displaying shot chart comparison: {full_name1} vs {full_name2}...")
+            plot_comparison_shot_chart(df1, full_name1, df2, full_name2, season)
+            print()
 
 if __name__ == "__main__":
     main()
